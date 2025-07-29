@@ -107,7 +107,7 @@ user := User{
     Age:   25,
 }
 
-result, err := userModel.InserOne(ctx, user)
+result, err := userModel.InsertOne(ctx, user)
 if err != nil {
     log.Fatal(err)
 }
@@ -141,7 +141,7 @@ userData := bson.M{
     "age":   30,
 }
 
-result, err := userModel.InserOne(ctx, userData)
+result, err := userModel.InsertOne(ctx, userData)
 if err != nil {
     log.Fatal(err)
 }
@@ -211,7 +211,7 @@ Closes the MongoDB connection.
 
 ### Model Operations
 
-#### `InserOne(ctx context.Context, data T, opts ...options.Lister[options.InsertOneOptions]) (*mongo.InsertOneResult, error)`
+#### `InsertOne(ctx context.Context, data T, opts ...options.Lister[options.InsertOneOptions]) (*mongo.InsertOneResult, error)`
 Validates and inserts a single document.
 
 #### `FindOne(ctx context.Context, query bson.M, opts ...options.Lister[options.FindOneOptions]) (T, error)`
@@ -314,7 +314,7 @@ func main() {
         Age:   28,
     }
     
-    result, err := userModel.InserOne(ctx, user)
+    result, err := userModel.InsertOne(ctx, user)
     if err != nil {
         log.Fatal("Insert failed:", err)
     }

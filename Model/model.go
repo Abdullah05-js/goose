@@ -24,7 +24,7 @@ func newModel[T types.ModelType](ctx context.Context, collectionName string, sch
 	return &Model[T]{Collection: collection, Schema: schema}, nil
 }
 
-func (model *Model[T]) InserOne(ctx context.Context, data T, opts ...options.Lister[options.InsertOneOptions]) (*mongo.InsertOneResult, error) {
+func (model *Model[T]) InsertOne(ctx context.Context, data T, opts ...options.Lister[options.InsertOneOptions]) (*mongo.InsertOneResult, error) {
 	val, err := s.ValidateSchema(*model.Schema, data)
 	if err != nil {
 		return nil, err
