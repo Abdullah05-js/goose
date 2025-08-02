@@ -3,7 +3,9 @@ package model
 import (
 	"context"
 	"fmt"
+	q "github.com/Abdullah05-js/goose/Query"
 	s "github.com/Abdullah05-js/goose/Schema"
+	shared "github.com/Abdullah05-js/goose/Shared"
 	types "github.com/Abdullah05-js/goose/Types"
 	"github.com/Abdullah05-js/goose/utils"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -12,8 +14,7 @@ import (
 )
 
 type Model[T types.ModelType] struct {
-	Collection *mongo.Collection
-	Schema     *s.Schema
+	shared.BaseModel[T]
 }
 
 func newModel[T types.ModelType](ctx context.Context, collectionName string, schema *s.Schema) (*Model[T], error) {
@@ -21,7 +22,7 @@ func newModel[T types.ModelType](ctx context.Context, collectionName string, sch
 	if err != nil {
 		return nil, err
 	}
-	return &Model[T]{Collection: collection, Schema: schema}, nil
+	return &Model[T]{shared.BaseModel[T]{Collection: collection, Schema: schema}}, nil
 }
 
 func (model *Model[T]) InsertOne(ctx context.Context, data T, opts ...options.Lister[options.InsertOneOptions]) (*mongo.InsertOneResult, error) {
@@ -36,29 +37,39 @@ func (model *Model[T]) InsertOne(ctx context.Context, data T, opts ...options.Li
 	return result, nil
 }
 
-func (model *Model[T]) FindOne(ctx context.Context, query bson.M, opts ...options.Lister[options.FindOneOptions]) (T, error) {
-	var result T
+func (model *Model[T]) FindOne(ctx context.Context, query bson.M, opts ...options.Lister[options.FindOneOptions]) *q.Query[T] {
+	qry := q.NewQuery(&model.BaseModel, q.ResultSingle, ctx)
+	var result bson.M
 	err := model.Collection.FindOne(ctx, query, opts...).Decode(&result)
-
 	if err != nil {
-		var Zero T
 		if err == mongo.ErrNoDocuments {
-			return Zero, fmt.Errorf("no document found by the query: %s", err)
+			qry.Err = fmt.Errorf("no document found by the query: %s", err)
+			return qry
 		}
-		return Zero, err
+		qry.Err = err
+		return qry
 	}
-	return result, nil
+	qry.SingleResult = result
+	return qry
 }
 
-func (model *Model[T]) Find(ctx context.Context, query bson.M, opts ...options.Lister[options.FindOptions]) ([]T, error) {
-	var result []T
+// When using this function, consider setting a limit with options.SetLimit() to avoid large result sets.
+func (model *Model[T]) Find(ctx context.Context, query bson.M, opts ...options.Lister[options.FindOptions]) *q.Query[T] {
+	qry := q.NewQuery(&model.BaseModel, q.ResultMany, ctx)
+
 	cursor, err := model.Collection.Find(ctx, query, opts...)
 	if err != nil {
-		return nil, err
+		qry.Err = err
+		return qry
 	}
 	defer cursor.Close(ctx)
+
+	var result []bson.M
 	if err := cursor.All(ctx, &result); err != nil {
-		return nil, err
+		qry.Err = err
+		return qry
 	}
-	return result, nil
+
+	qry.ManyResult = result
+	return qry
 }

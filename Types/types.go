@@ -1,9 +1,9 @@
 package types
 
 import (
-	"reflect"
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"reflect"
 )
 
 type OnlyStruct interface {
@@ -14,6 +14,7 @@ type FieldOptions struct {
 	Required bool
 	Default  interface{}
 	Type     reflect.Kind
+	Ref      string
 	Validate func(interface{}) error // optional custom validator
 }
 

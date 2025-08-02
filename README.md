@@ -1,15 +1,17 @@
 # Goose 🦆
 
-A lightweight, type-safe MongoDB Object Document Mapper (ODM) for Go with schema validation and flexible data modeling.
+A lightweight, type-safe MongoDB Object Document Mapper (ODM) for Go with schema validation, flexible data modeling, and relationship population.
 
 ## Features
 
 - 🔒 **Type Safety**: Full generic support for type-safe operations
 - 📋 **Schema Validation**: Built-in field validation with custom validators
+- 🔗 **Relationships**: Support for document references with population
 - 🏗️ **Flexible Models**: Support for both structs and `bson.M` documents
 - 🚀 **Easy Setup**: Simple connection management
 - ⚡ **Performance**: Lightweight wrapper around the official MongoDB Go driver
 - 🛡️ **Error Handling**: Comprehensive error messages for debugging
+- 🔍 **Query Chaining**: Fluent API for query operations with populate support
 
 ## Installation
 
@@ -80,6 +82,11 @@ userSchema, err := schema.NewSchema(types.SchemaOptions{
         Type:     reflect.Int,
         Default:  18,
     },
+    "profile": {
+        Required: false,
+        Type:     reflect.String, // ObjectID as string
+        Ref:      "profiles",     // Reference to profiles collection
+    },
 })
 ```
 
@@ -89,9 +96,10 @@ userSchema, err := schema.NewSchema(types.SchemaOptions{
 
 ```go
 type User struct {
-    Name  string `bson:"name"`
-    Email string `bson:"email"`
-    Age   int    `bson:"age"`
+    Name    string             `bson:"name"`
+    Email   string             `bson:"email"`
+    Age     int                `bson:"age"`
+    Profile bson.ObjectID      `bson:"profile,omitempty"`
 }
 
 // Create model
@@ -112,14 +120,16 @@ if err != nil {
     log.Fatal(err)
 }
 
-// Find documents
-users, err := userModel.Find(ctx, bson.M{"age": bson.M{"$gte": 18}})
+// Find documents with query chaining
+query := userModel.Find(ctx, bson.M{"age": bson.M{"$gte": 18}})
+users, _, err := query.Result()
 if err != nil {
     log.Fatal(err)
 }
 
-// Find one document
-user, err := userModel.FindOne(ctx, bson.M{"email": "john@example.com"})
+// Find one document with population
+query = userModel.FindOne(ctx, bson.M{"email": "john@example.com"}).Populate("profile")
+user, _, err := query.Result()
 if err != nil {
     log.Fatal(err)
 }
@@ -156,6 +166,7 @@ type FieldOptions struct {
     Required bool                           // Field is required
     Default  interface{}                    // Default value if not provided
     Type     reflect.Kind                   // Expected data type
+    Ref      string                         // Collection reference for population
     Validate func(interface{}) error        // Custom validation function
 }
 ```
@@ -163,40 +174,93 @@ type FieldOptions struct {
 ### Example Schema with All Options
 
 ```go
-productSchema, err := schema.NewSchema(types.SchemaOptions{
-    "name": {
+postSchema, err := schema.NewSchema(types.SchemaOptions{
+    "title": {
         Required: true,
         Type:     reflect.String,
         Validate: func(v interface{}) error {
-            name := v.(string)
-            if len(name) < 3 {
-                return fmt.Errorf("name must be at least 3 characters")
+            title := v.(string)
+            if len(title) < 5 {
+                return fmt.Errorf("title must be at least 5 characters")
             }
             return nil
         },
     },
-    "price": {
+    "content": {
         Required: true,
-        Type:     reflect.Float64,
-        Validate: func(v interface{}) error {
-            price := v.(float64)
-            if price <= 0 {
-                return fmt.Errorf("price must be positive")
-            }
-            return nil
-        },
+        Type:     reflect.String,
+    },
+    "author": {
+        Required: true,
+        Type:     reflect.String, // ObjectID as string
+        Ref:      "users",        // Reference to users collection
     },
     "category": {
         Required: false,
         Type:     reflect.String,
-        Default:  "uncategorized",
+        Default:  "general",
     },
-    "inStock": {
+    "published": {
         Required: false,
         Type:     reflect.Bool,
-        Default:  true,
+        Default:  false,
     },
 })
+```
+
+## Query System
+
+The new query system provides a fluent API for chaining operations:
+
+### Basic Queries
+
+```go
+// Find many documents
+query := userModel.Find(ctx, bson.M{"age": bson.M{"$gte": 18}})
+_, users, err := query.Result()
+if err != nil {
+    log.Fatal(err)
+}
+
+// Find one document
+query = userModel.FindOne(ctx, bson.M{"email": "john@example.com"})
+user, _, err := query.Result()
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### Population (Relationships)
+
+Population allows you to automatically fetch referenced documents:
+
+```go
+// Populate a single reference
+query := userModel.FindOne(ctx, bson.M{"_id": userID}).Populate("profile")
+user, _, err := query.Result()
+if err != nil {
+    log.Fatal(err)
+}
+
+// Populate multiple documents
+query = postModel.Find(ctx, bson.M{}).Populate("author")
+_, posts, err := query.Result()
+if err != nil {
+    log.Fatal(err)
+}
+// Each post will have the full author document instead of just the ObjectID
+```
+
+### Query Result Handling
+
+The `Result()` method returns different values based on the query type:
+
+```go
+// For FindOne queries
+singleResult, _, err := query.Result()
+
+// For Find queries  
+_, manyResults, err := query.Result()
 ```
 
 ## API Reference
@@ -214,11 +278,19 @@ Closes the MongoDB connection.
 #### `InsertOne(ctx context.Context, data T, opts ...options.Lister[options.InsertOneOptions]) (*mongo.InsertOneResult, error)`
 Validates and inserts a single document.
 
-#### `FindOne(ctx context.Context, query bson.M, opts ...options.Lister[options.FindOneOptions]) (T, error)`
-Finds and returns a single document matching the query.
+#### `FindOne(ctx context.Context, query bson.M, opts ...options.Lister[options.FindOneOptions]) *Query[T]`
+Finds a single document matching the query and returns a Query object for chaining.
 
-#### `Find(ctx context.Context, query bson.M, opts ...options.Lister[options.FindOptions]) ([]T, error)`
-Finds and returns multiple documents matching the query.
+#### `Find(ctx context.Context, query bson.M, opts ...options.Lister[options.FindOptions]) *Query[T]`
+Finds multiple documents matching the query and returns a Query object for chaining.
+
+### Query Operations
+
+#### `Populate(fieldName string) *Query[T]`
+Populates a referenced field with the actual document from the referenced collection.
+
+#### `Result() (T, []T, error)`
+Executes the query and returns the results. For single queries, returns `(result, nil, error)`. For multiple queries, returns `(zeroValue, results, error)`.
 
 ### Schema Validation
 
@@ -236,10 +308,10 @@ Goose provides detailed error messages for common scenarios:
 - **Type mismatches**: `"field fieldName expected type string but got int"`
 - **Validation failures**: `"validation failed on field fieldName: custom error"`
 - **Schema conflicts**: `"can't use Default option with Required at the same time"`
+- **Population errors**: `"populate: field fieldName is not an ObjectID"`
+- **Reference errors**: `"Ref in field Options not defined"`
 
-## Examples
-
-### Complete Example
+## Complete Example with Relationships
 
 ```go
 package main
@@ -259,22 +331,29 @@ import (
 )
 
 type User struct {
-    Name  string `bson:"name"`
-    Email string `bson:"email"`
-    Age   int    `bson:"age"`
+    ID    bson.ObjectID `bson:"_id,omitempty"`
+    Name  string        `bson:"name"`
+    Email string        `bson:"email"`
+}
+
+type Post struct {
+    ID      bson.ObjectID `bson:"_id,omitempty"`
+    Title   string        `bson:"title"`
+    Content string        `bson:"content"`
+    Author  bson.ObjectID `bson:"author"`
 }
 
 func main() {
     ctx := context.Background()
     
     // Connect to MongoDB
-    err := goose.Connect("mongodb://localhost:27017", "testDB")
+    err := goose.Connect("mongodb://localhost:27017", "blogDB")
     if err != nil {
         log.Fatal("Connection failed:", err)
     }
     defer goose.DisConnect(ctx)
     
-    // Create schema
+    // Create user schema
     userSchema, err := schema.NewSchema(types.SchemaOptions{
         "name": {
             Required: true,
@@ -291,46 +370,120 @@ func main() {
                 return nil
             },
         },
-        "age": {
-            Required: false,
-            Type:     reflect.Int,
-            Default:  18,
+    })
+    if err != nil {
+        log.Fatal("User schema creation failed:", err)
+    }
+    
+    // Create post schema with user reference
+    postSchema, err := schema.NewSchema(types.SchemaOptions{
+        "title": {
+            Required: true,
+            Type:     reflect.String,
+        },
+        "content": {
+            Required: true,
+            Type:     reflect.String,
+        },
+        "author": {
+            Required: true,
+            Type:     reflect.String, // ObjectID field
+            Ref:      "users",        // Reference to users collection
         },
     })
     if err != nil {
-        log.Fatal("Schema creation failed:", err)
+        log.Fatal("Post schema creation failed:", err)
     }
     
-    // Create model
+    // Create models
     userModel, err := model.NewModel[User](ctx, "users", userSchema)
     if err != nil {
-        log.Fatal("Model creation failed:", err)
+        log.Fatal("User model creation failed:", err)
     }
     
-    // Insert user
+    postModel, err := model.NewModel[Post](ctx, "posts", postSchema)
+    if err != nil {
+        log.Fatal("Post model creation failed:", err)
+    }
+    
+    // Insert a user
     user := User{
         Name:  "Alice Johnson",
         Email: "alice@example.com",
-        Age:   28,
     }
     
-    result, err := userModel.InsertOne(ctx, user)
+    userResult, err := userModel.InsertOne(ctx, user)
     if err != nil {
-        log.Fatal("Insert failed:", err)
+        log.Fatal("User insert failed:", err)
     }
     
-    fmt.Printf("Inserted document with ID: %v\n", result.InsertedID)
+    userID := userResult.InsertedID.(bson.ObjectID)
+    fmt.Printf("Inserted user with ID: %v\n", userID)
     
-    // Find users
-    users, err := userModel.Find(ctx, bson.M{})
+    // Insert a post with user reference
+    post := Post{
+        Title:   "My First Blog Post",
+        Content: "This is the content of my first blog post.",
+        Author:  userID,
+    }
+    
+    postResult, err := postModel.InsertOne(ctx, post)
     if err != nil {
-        log.Fatal("Find failed:", err)
+        log.Fatal("Post insert failed:", err)
     }
     
-    fmt.Printf("Found %d users\n", len(users))
-    for _, u := range users {
-        fmt.Printf("User: %+v\n", u)
+    fmt.Printf("Inserted post with ID: %v\n", postResult.InsertedID)
+    
+    // Find posts with populated author information
+    query := postModel.Find(ctx, bson.M{}).Populate("author")
+    _, posts, err := query.Result()
+    if err != nil {
+        log.Fatal("Find with populate failed:", err)
     }
+    
+    fmt.Printf("Found %d posts\n", len(posts))
+    for _, p := range posts {
+        fmt.Printf("Post: %+v\n", p)
+        // The author field now contains the full user document instead of just ObjectID
+    }
+}
+```
+
+## Best Practices
+
+### Query Optimization
+When using `Find()`, consider setting a limit to avoid large result sets:
+
+```go
+opts := options.Find().SetLimit(10)
+query := userModel.Find(ctx, bson.M{}, opts)
+```
+
+### Population Performance
+Population executes additional database queries. Use it judiciously:
+
+```go
+// Good: Only populate when you need the referenced data
+query := postModel.FindOne(ctx, bson.M{"_id": postID}).Populate("author")
+
+// Consider: Do you really need to populate all posts?
+query = postModel.Find(ctx, bson.M{}).Populate("author")
+```
+
+### Error Handling
+Always handle errors from the Result() method:
+
+```go
+query := userModel.FindOne(ctx, bson.M{"email": "nonexistent@example.com"})
+user, _, err := query.Result()
+if err != nil {
+    // Handle specific errors
+    if strings.Contains(err.Error(), "no document found") {
+        // User not found
+        return nil
+    }
+    // Other error
+    return err
 }
 ```
 

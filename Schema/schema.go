@@ -91,7 +91,7 @@ func ValidateSchema[T types.ModelType](schema Schema, document T) (bson.M, error
 					value = opts.Default
 				}
 			}
-
+			
 			if t := reflect.TypeOf(value); t != nil && t.Kind() != opts.Type {
 				return nil, fmt.Errorf("field %s expected type %s but got %s", field.Name, opts.Type.String(), t.Kind().String())
 			}
